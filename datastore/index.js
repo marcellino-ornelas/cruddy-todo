@@ -1,54 +1,69 @@
 const fs = require('fs');
 const path = require('path');
 const _ = require('underscore');
+const async = require('async');
 const counter = require('./counter');
 
 var items = {};
+// var exports.dataDir = path.join( process.cwd(), './data/');
+
+var _cb = (function(id, text, callback) {
+
+  if ( typeof text === 'function' ) {
+    callback = text;
+    text = null;
+  }
+
+  return function(err, result) {
+    err ? callback(err) : callback(null, {id: id, text: (text || result || '') });
+  };
+});
 
 // Public API - Fix these CRUD functions ///////////////////////////////////////
 
+var getPath = (id) => path.join(exports.dataDir, id + '.txt');
+
 exports.create = (text, callback) => {
-  var id = counter.getNextUniqueId();
-  items[id] = text;
-  callback(null, {id: id, text: text});
+  counter.getNextUniqueId(function( err, id ) {
+    
+    fs.writeFile( getPath(id), text, _cb(id, text, callback) );
+
+  });
 };
 
 exports.readOne = (id, callback) => {
-  var item = items[id];
-  if (!item) {
-    callback(new Error(`No item with id: ${id}`));
-  } else {
-    callback(null, {id: id, text: item});
-  }
+  
+  fs.readFile( getPath(id), 'utf8', _cb(id, callback));
+
 };
 
 exports.readAll = (callback) => {
-  var data = [];
-  _.each(items, (item, idx) => {
-    data.push({ id: idx, text: items[idx] });
-  });
-  callback(null, data);
+
+  async.map( 
+    fs.readdirSync(exports.dataDir), 
+    function(id, done) { exports.readOne( path.basename(id, '.txt'), done ); },
+    callback
+  );
+
 };
 
 exports.update = (id, text, callback) => {
-  var item = items[id];
-  if (!item) {
-    callback(new Error(`No item with id: ${id}`));
-  } else {
-    items[id] = text;
-    callback(null, {id: id, text: text});
-  }
+
+  var path = getPath(id);
+
+  fs.access( path, fs.constants.F_OK, (err) => {
+    if (err) { return callback(err); }
+    
+    fs.writeFile( path , text, _cb(id, text, callback) );
+
+  });
+
 };
 
 exports.delete = (id, callback) => {
-  var item = items[id];
-  delete items[id];
-  if(!item) {
-    // report an error if item not found
-    callback(new Error(`No item with id: ${id}`))
-  } else {
-    callback();
-  }
+
+  fs.unlink( getPath(id), callback );
+
 };
 
 // Config+Initialization code -- DO NOT MODIFY /////////////////////////////////
